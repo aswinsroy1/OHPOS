@@ -572,36 +572,43 @@ fun MenuScreen(
                 ),
                 modifier = Modifier.align(Alignment.BottomCenter)
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.9f)
-                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
-                        .background(AppTheme.colors.background)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {}
-                ) {
-                    AddMenuItemForm(
-                        initialItem = itemToEdit,
-                        existingCategories = availableCategories,
-                        onHasUnsavedChanges = { formHasUnsavedChanges = it },
-                        onSave = { newItem ->
-                            viewModel.saveMenuItem(newItem)
-                            showAddItemForm = false
-                            itemToEdit = null
-                            formHasUnsavedChanges = false
-                            if (newItem.id == 0) showSuccessToast = true
-                        },
-                        onCancel = {
-                            if (formHasUnsavedChanges) showUnsavedDialog = true
-                            else {
+                // key() forces Compose to recreate the entire subtree — and therefore all
+                // remembered state inside AddMenuItemForm — whenever the form is opened for
+                // a different item (or opened fresh via the "+" button with itemToEdit = null).
+                // Without this, AnimatedVisibility keeps the old composition alive between
+                // opens, so remember { } never re-runs and the previous field values persist.
+                key(itemToEdit?.id ?: -1) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(0.9f)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                            .background(AppTheme.colors.background)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {}
+                    ) {
+                        AddMenuItemForm(
+                            initialItem = itemToEdit,
+                            existingCategories = availableCategories,
+                            onHasUnsavedChanges = { formHasUnsavedChanges = it },
+                            onSave = { newItem ->
+                                viewModel.saveMenuItem(newItem)
                                 showAddItemForm = false
                                 itemToEdit = null
+                                formHasUnsavedChanges = false
+                                if (newItem.id == 0) showSuccessToast = true
+                            },
+                            onCancel = {
+                                if (formHasUnsavedChanges) showUnsavedDialog = true
+                                else {
+                                    showAddItemForm = false
+                                    itemToEdit = null
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
