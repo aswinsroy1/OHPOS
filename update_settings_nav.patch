@@ -1,0 +1,37 @@
+--- app/src/main/java/com/example/ui/screens/SettingsNavGraph.kt
++++ app/src/main/java/com/example/ui/screens/SettingsNavGraph.kt
+@@ -15,7 +15,9 @@
+ 
+ enum class SettingsDestination {
+     Main,
+-    Printers
++    Printers,
++    ReceiptLayout,
++    PaperSize
+ }
+ 
+ @Composable
+@@ -53,5 +55,35 @@
+                 onBackClick = { currentDestination = SettingsDestination.Main }
+             )
+         }
++
++        // Receipt Layout Settings
++        AnimatedVisibility(
++            visible = currentDestination == SettingsDestination.ReceiptLayout,
++            enter = fadeIn(animationSpec = PremiumMotion.defaultSpring()) + slideInHorizontally(
++                initialOffsetX = { it },
++                animationSpec = PremiumMotion.defaultSpring()
++            ),
++            exit = fadeOut(animationSpec = PremiumMotion.defaultSpring()) + slideOutHorizontally(
++                targetOffsetX = { it },
++                animationSpec = PremiumMotion.defaultSpring()
++            ),
++            modifier = Modifier.fillMaxSize()
++        ) {
++            ReceiptLayoutScreen(
++                onBackClick = { currentDestination = SettingsDestination.Main }
++            )
++        }
+     }
+ }

@@ -1,0 +1,1 @@
+sed -i 's/                Box(/                val expandFraction by transition.animateFloat(\n                    transitionSpec = { PremiumMotion.defaultSpring() },\n                    label = "expandFraction"\n                ) { visible -> if (visible) 1f else 0f }\n\n                Box(/g' app/src/main/java/com/example/ui/components/InvoicePreviewOverlay.kt

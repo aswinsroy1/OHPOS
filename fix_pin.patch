@@ -1,0 +1,61 @@
+--- app/src/main/java/com/example/ui/screens/DeletionRequestsScreen.kt
++++ app/src/main/java/com/example/ui/screens/DeletionRequestsScreen.kt
+@@ -21,6 +21,7 @@
+ import androidx.compose.ui.text.style.TextAlign
+ import androidx.compose.ui.unit.dp
+ import androidx.lifecycle.viewmodel.compose.viewModel
++import androidx.compose.runtime.saveable.rememberSaveable
+ import com.example.data.BillWithItems
+ import com.example.data.MenuItem
+ import com.example.ui.components.*
+@@ -78,6 +79,7 @@
+     var changeNewError by remember { mutableStateOf("") }
+     var changeConfirmInput by remember { mutableStateOf("") }
+     var changeConfirmError by remember { mutableStateOf("") }
++    var storedNewPin by rememberSaveable { mutableStateOf("") }
+     
+     // Disable PIN states
+     var disableCurrentInput by remember { mutableStateOf("") }
+@@ -109,10 +111,14 @@
+         
+         changeCurrentInput = ""
+         changeCurrentError = ""
+-        changeNewInput = ""
++        if (activePinModal != PinModalState.ConfirmNewForChange) {
++            changeNewInput = ""
++        }
+         changeNewError = ""
+         changeConfirmInput = ""
+         changeConfirmError = ""
++        if (activePinModal == PinModalState.None) {
++            storedNewPin = ""
++        }
+         
+         disableCurrentInput = ""
+         disableCurrentError = ""
+@@ -901,6 +907,7 @@
+                                                             if (changeNewInput.length != 4) {
+                                                                 changeNewError = "PIN must be exactly 4 digits"
+                                                             } else {
++                                                                storedNewPin = changeNewInput
+                                                                 activePinModal = PinModalState.ConfirmNewForChange
+                                                             }
+                                                         },
+@@ -988,10 +995,15 @@
+                                                         onClick = {
+                                                             if (changeConfirmInput.length != 4) {
+                                                                 changeConfirmError = "PIN must be exactly 4 digits"
+-                                                            } else if (changeConfirmInput != changeNewInput) {
++                                                            } else if (changeConfirmInput != storedNewPin) {
+                                                                 changeConfirmError = "PINs do not match"
++                                                                changeConfirmInput = ""
+                                                             } else {
+-                                                                pinManager.setPin(changeNewInput)
++                                                                pinManager.setPin(storedNewPin)
++                                                                storedNewPin = ""
++                                                                changeNewInput = ""
++                                                                changeConfirmInput = ""
++                                                                changeCurrentInput = ""
+                                                                 toastMessage = "PIN updated successfully"
+                                                                 showToast = true
+                                                                 activePinModal = PinModalState.None

@@ -1,0 +1,1 @@
+sed -i 's/import androidx.compose.material.icons.rounded.KeyboardArrowUp/import androidx.compose.material.icons.rounded.KeyboardArrowUp\nimport androidx.compose.material.icons.rounded.CheckCircle\nimport androidx.compose.material.icons.rounded.ErrorOutline\nimport androidx.compose.material.icons.rounded.PrintDisabled/g' app/src/main/java/com/example/ui/screens/BillingScreen.kt
