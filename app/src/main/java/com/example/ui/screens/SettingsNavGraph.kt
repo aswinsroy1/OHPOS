@@ -23,9 +23,14 @@ enum class SettingsDestination {
 @androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
 fun SettingsNavGraph(
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    initialDestination: SettingsDestination = SettingsDestination.Main
 ) {
-    var currentDestination by remember { mutableStateOf(SettingsDestination.Main) }
+    var currentDestination by remember { mutableStateOf(initialDestination) }
+
+    LaunchedEffect(initialDestination) {
+        currentDestination = initialDestination
+    }
 
     androidx.activity.compose.BackHandler(enabled = currentDestination != SettingsDestination.Main) {
         currentDestination = SettingsDestination.Main

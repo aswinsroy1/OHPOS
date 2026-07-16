@@ -13,6 +13,8 @@ import com.example.R
 import com.example.data.NotificationPreferencesRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import android.app.PendingIntent
+import android.content.Intent
 
 /**
  * Central notification manager for OH POS.
@@ -28,11 +30,13 @@ object AppNotificationManager {
     private const val CHANNEL_BACKUP_FAILURE = "backup_failure"
     private const val CHANNEL_PRINTER_FAILURE = "printer_failure"
     private const val CHANNEL_DELETION_REQUEST = "deletion_request"
+    private const val CHANNEL_DAY_CLOSING = "day_closing"
 
     // Notification IDs (unique per category so they don't overwrite each other)
     private const val ID_BACKUP_SUCCESS = 1001
     private const val ID_BACKUP_FAILURE = 1002
     private const val ID_PRINTER_FAILURE = 1003
+    private const val ID_DAY_CLOSING = 1004
     private var deletionRequestIdCounter = 2000
 
     /**
@@ -73,6 +77,13 @@ object AppNotificationManager {
                 NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
                 description = "Notifications when a new deletion request needs manager approval"
+            },
+            NotificationChannel(
+                CHANNEL_DAY_CLOSING,
+                "Daily Closing",
+                NotificationManager.IMPORTANCE_DEFAULT
+            ).apply {
+                description = "Notifications when a business day closes automatically"
             }
         )
 
@@ -93,6 +104,20 @@ object AppNotificationManager {
             true
         }
     }
+    
+    private fun createTargetIntent(context: Context, target: String): PendingIntent {
+        val intent = Intent().apply {
+            component = android.content.ComponentName(context, "com.example.MainActivity")
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("extra_notification_target", target)
+        }
+        return PendingIntent.getActivity(
+            context,
+            target.hashCode(),
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    }
 
     // ---- Per-category notification methods ----
 
@@ -107,7 +132,8 @@ object AppNotificationManager {
             notificationId = ID_BACKUP_SUCCESS,
             title = "Backup Complete",
             message = message,
-            priority = NotificationCompat.PRIORITY_LOW
+            priority = NotificationCompat.PRIORITY_LOW,
+            pendingIntent = createTargetIntent(context, "backup_settings")
         )
     }
 
@@ -122,7 +148,8 @@ object AppNotificationManager {
             notificationId = ID_BACKUP_FAILURE,
             title = "Backup Failed",
             message = message,
-            priority = NotificationCompat.PRIORITY_HIGH
+            priority = NotificationCompat.PRIORITY_HIGH,
+            pendingIntent = createTargetIntent(context, "backup_settings")
         )
     }
 
@@ -137,7 +164,8 @@ object AppNotificationManager {
             notificationId = ID_PRINTER_FAILURE,
             title = "Print Failed",
             message = message,
-            priority = NotificationCompat.PRIORITY_HIGH
+            priority = NotificationCompat.PRIORITY_HIGH,
+            pendingIntent = createTargetIntent(context, "printer_settings")
         )
     }
 
@@ -153,7 +181,38 @@ object AppNotificationManager {
             notificationId = deletionRequestIdCounter++,
             title = "Deletion Request Pending",
             message = message,
-            priority = NotificationCompat.PRIORITY_DEFAULT
+            priority = NotificationCompat.PRIORITY_DEFAULT,
+            pendingIntent = createTargetIntent(context, "deletion_requests")
+        )
+    }
+    
+    fun notifyDayClosed(context: Context, message: String, pdfUriStr: String?) {
+        val pendingIntent = pdfUriStr?.let {
+            try {
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(android.net.Uri.parse(it), "application/pdf")
+                    flags = Intent.FLAG_GRANT_READ_URI_PERMISSION
+                }
+                PendingIntent.getActivity(
+                    context,
+                    ID_DAY_CLOSING,
+                    intent,
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+                null
+            }
+        }
+
+        post(
+            context = context,
+            channelId = CHANNEL_DAY_CLOSING,
+            notificationId = ID_DAY_CLOSING,
+            title = "Day Closed",
+            message = message,
+            priority = NotificationCompat.PRIORITY_DEFAULT,
+            pendingIntent = pendingIntent
         )
     }
 
@@ -165,18 +224,24 @@ object AppNotificationManager {
         notificationId: Int,
         title: String,
         message: String,
-        priority: Int
+        priority: Int,
+        pendingIntent: PendingIntent? = null
     ) {
         if (!hasNotificationPermission(context)) return
 
-        val notification = NotificationCompat.Builder(context, channelId)
+        val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(message)
             .setStyle(NotificationCompat.BigTextStyle().bigText(message))
             .setPriority(priority)
             .setAutoCancel(true)
-            .build()
+            
+        pendingIntent?.let {
+            builder.setContentIntent(it)
+        }
+            
+        val notification = builder.build()
 
         try {
             NotificationManagerCompat.from(context).notify(notificationId, notification)

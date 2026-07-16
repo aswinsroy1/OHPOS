@@ -52,7 +52,10 @@ import androidx.compose.ui.graphics.graphicsLayer
 
 @androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
-fun MainScreenContent() {
+fun MainScreenContent(
+    notificationTarget: String? = null,
+    onNotificationTargetConsumed: () -> Unit = {}
+) {
     val dayClosingViewModel: DayClosingViewModel = viewModel()
     val autoCloseFailed by dayClosingViewModel.autoCloseFailed.collectAsState()
     val showReportsDot = autoCloseFailed
@@ -69,6 +72,31 @@ fun MainScreenContent() {
     var isPinError by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val pinManager = remember { PinManager(context) }
+    
+    var settingsInitialDestination by remember { mutableStateOf(SettingsDestination.Main) }
+    
+    LaunchedEffect(notificationTarget) {
+        when (notificationTarget) {
+            "deletion_requests" -> {
+                showDeletionRequests = true
+                onNotificationTargetConsumed()
+            }
+            "day_closing" -> {
+                showDayClosingScreen = true
+                onNotificationTargetConsumed()
+            }
+            "printer_settings" -> {
+                settingsInitialDestination = SettingsDestination.Printers
+                showSettings = true
+                onNotificationTargetConsumed()
+            }
+            "backup_settings" -> {
+                settingsInitialDestination = SettingsDestination.AutoBackup
+                showSettings = true
+                onNotificationTargetConsumed()
+            }
+        }
+    }
     
     var backPressCount by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
@@ -403,7 +431,11 @@ fun MainScreenContent() {
             modifier = Modifier.fillMaxSize()
         ) {
             SettingsNavGraph(
-                onBackClick = { showSettings = false }
+                onBackClick = { 
+                    showSettings = false
+                    settingsInitialDestination = SettingsDestination.Main
+                },
+                initialDestination = settingsInitialDestination
             )
         }
 
@@ -431,7 +463,10 @@ fun MainScreenContent() {
 
 @androidx.compose.material3.ExperimentalMaterial3Api
 @Composable
-fun MainScreen() {
+fun MainScreen(
+    notificationTarget: String? = null,
+    onNotificationTargetConsumed: () -> Unit = {}
+) {
     var showSplash by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(true) }
     
     androidx.compose.animation.Crossfade(
@@ -442,7 +477,7 @@ fun MainScreen() {
         if (isSplash) {
             AnimatedReceiptSplash(onSplashComplete = { showSplash = false })
         } else {
-            MainScreenContent()
+            MainScreenContent(notificationTarget, onNotificationTargetConsumed)
         }
     }
 }

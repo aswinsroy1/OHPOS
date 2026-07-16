@@ -308,6 +308,12 @@ class DayClosingViewModel(application: Application) : AndroidViewModel(applicati
                     pdfFilePath = pdfUriStr ?: ""
                 )
                 closureDao.insertClosure(closure)
+                
+                com.example.util.AppNotificationManager.notifyDayClosed(
+                    context,
+                    "Business day for $dateToCloseStr has been automatically closed.",
+                    pdfUriStr
+                )
             }
             
             sharedPrefs.edit().putString("last_active_business_date", todayStr).apply()
