@@ -11,6 +11,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.Calendar
 
 data class DayStats(
@@ -38,6 +40,8 @@ class DayClosingViewModel(application: Application) : AndroidViewModel(applicati
     private val closureDao = db.dailyClosureDao()
     private val billDao = db.billDao()
     private val prefRepo = com.example.data.PrinterPreferencesRepository(application)
+    private val dailyClosingPrefRepo = com.example.data.DailyClosingPreferencesRepository(application)
+    private val rolloverMutex = Mutex()
     
     val lastClosure = closureDao.getLastClosureFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -117,23 +121,6 @@ class DayClosingViewModel(application: Application) : AndroidViewModel(applicati
     init {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                // Wait for the app to reach a stable state before starting automatic checks
-                kotlinx.coroutines.delay(5000)
-                
-                dayStats.collect {
-                    try {
-                        checkAutomaticRollover(getApplication<Application>().applicationContext)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-        
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
                 // Wait for the app to reach a stable state
                 kotlinx.coroutines.delay(5000)
                 
@@ -151,109 +138,183 @@ class DayClosingViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private suspend fun checkAutomaticRollover(context: android.content.Context) {
+    private suspend fun checkAutomaticRollover(context: android.content.Context) = rolloverMutex.withLock {
         try {
+            val isAutoCloseEnabled = dailyClosingPrefRepo.isAutoCloseEnabled.first()
+            if (!isAutoCloseEnabled) return@withLock
+            
+            val autoCloseHour = dailyClosingPrefRepo.autoCloseHour.first()
+            val autoCloseMinute = dailyClosingPrefRepo.autoCloseMinute.first()
+            val savedFolderUriStr = dailyClosingPrefRepo.exportFolderUri.first()
+            
             val sharedPrefs = context.getSharedPreferences("ohpos_prefs", android.content.Context.MODE_PRIVATE)
-            val savedFolderUriStr = sharedPrefs.getString("report_folder_uri", null)
-            val lastActiveDate = sharedPrefs.getString("last_active_business_date", null)
             
             val calendar = Calendar.getInstance()
             val todayStr = "${calendar.get(Calendar.YEAR)}-${String.format("%02d", calendar.get(Calendar.MONTH) + 1)}-${String.format("%02d", calendar.get(Calendar.DAY_OF_MONTH))}"
             
-            if (lastActiveDate == null) {
-                sharedPrefs.edit().putString("last_active_business_date", todayStr).apply()
-                return
+            val currentHour = calendar.get(Calendar.HOUR_OF_DAY)
+            val currentMinute = calendar.get(Calendar.MINUTE)
+            val hasPassedAutoCloseTime = (currentHour > autoCloseHour) || (currentHour == autoCloseHour && currentMinute >= autoCloseMinute)
+            
+            val lastClosureObj = closureDao.getLastClosureFlow().first()
+            var startDateStr: String? = null
+            
+            val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+            
+            if (lastClosureObj != null) {
+                val lastDateParsed = dateFormat.parse(lastClosureObj.dateString)
+                if (lastDateParsed != null) {
+                    val cal = Calendar.getInstance().apply { time = lastDateParsed }
+                    cal.add(Calendar.DAY_OF_MONTH, 1)
+                    startDateStr = dateFormat.format(cal.time)
+                }
+            } else {
+                startDateStr = sharedPrefs.getString("last_active_business_date", null)
+                if (startDateStr == null) {
+                    sharedPrefs.edit().putString("last_active_business_date", todayStr).apply()
+                    return@withLock
+                }
             }
             
-            if (lastActiveDate != todayStr) {
-                val lastClosureObj = closureDao.getLastClosureFlow().first()
-                if (lastClosureObj?.dateString != lastActiveDate) {
-                    val bills = billDao.getAllBills().first()
-                    val lastClosedTimestamp = lastClosureObj?.closedAtTimestamp ?: 0L
-                    val unclosedBills = bills.filter { it.bill.timestamp > lastClosedTimestamp }
+            if (startDateStr == null) return@withLock
+            
+            val startParsed = dateFormat.parse(startDateStr) ?: return@withLock
+            val todayParsed = dateFormat.parse(todayStr) ?: return@withLock
+            
+            val datesToClose = mutableListOf<String>()
+            val loopCalendar = Calendar.getInstance().apply { time = startParsed }
+            
+            while (loopCalendar.timeInMillis <= todayParsed.time) {
+                val loopDateStr = dateFormat.format(loopCalendar.time)
+                val isToday = loopDateStr == todayStr
+                
+                val shouldCloseThisDay = if (isToday) {
+                    hasPassedAutoCloseTime
+                } else {
+                    true
+                }
+                
+                if (shouldCloseThisDay) {
+                    datesToClose.add(loopDateStr)
+                }
+                
+                loopCalendar.add(Calendar.DAY_OF_MONTH, 1)
+            }
+            
+            val bills = billDao.getAllBills().first()
+            
+            for (dateToCloseStr in datesToClose) {
+                val existingClosure = closureDao.getClosureForDate(dateToCloseStr)
+                if (existingClosure != null) continue
+                
+                val parsedDate = dateFormat.parse(dateToCloseStr)!!
+                val dayStartCal = Calendar.getInstance().apply {
+                    time = parsedDate
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val dayStart = dayStartCal.timeInMillis
+                
+                val dayEndCal = Calendar.getInstance().apply {
+                    time = parsedDate
+                    set(Calendar.HOUR_OF_DAY, 23)
+                    set(Calendar.MINUTE, 59)
+                    set(Calendar.SECOND, 59)
+                    set(Calendar.MILLISECOND, 999)
+                }
+                val dayEnd = dayEndCal.timeInMillis
+                
+                val dayBills = bills.filter { it.bill.timestamp in dayStart..dayEnd }
+                
+                var pdfUriStr: String? = "" 
+                
+                if (dayBills.isNotEmpty() && savedFolderUriStr != null) {
+                    val resName = prefRepo.resNameFlow.first()
                     
-                    if (unclosedBills.isNotEmpty() && savedFolderUriStr != null) {
-                        val resName = prefRepo.resNameFlow.first()
-                        
-                        var openingTime = "-"
-                        val firstBill = unclosedBills.last().bill
-                        val c = Calendar.getInstance()
-                        c.timeInMillis = firstBill.timestamp
-                        openingTime = "${String.format("%02d", c.get(Calendar.HOUR_OF_DAY))}:${String.format("%02d", c.get(Calendar.MINUTE))}"
-                        
-                        val totalSales = unclosedBills.sumOf { it.bill.totalAmount }
-                        
-                        var topItemName = "-"
-                        var topCatName = "-"
-                        val itemStats = mutableMapOf<String, Int>()
-                        val catStats = mutableMapOf<String, Int>()
-                        for (bill in unclosedBills) {
-                            for (item in bill.items) {
-                                itemStats[item.menuItemName] = (itemStats[item.menuItemName] ?: 0) + item.quantity
-                                catStats[item.menuItemCategory] = (catStats[item.menuItemCategory] ?: 0) + item.quantity
-                            }
+                    var openingTime = "-"
+                    val firstBill = dayBills.first().bill
+                    val c = Calendar.getInstance()
+                    c.timeInMillis = firstBill.timestamp
+                    openingTime = "${String.format("%02d", c.get(Calendar.HOUR_OF_DAY))}:${String.format("%02d", c.get(Calendar.MINUTE))}"
+                    
+                    val totalSales = dayBills.sumOf { it.bill.totalAmount }
+                    
+                    var topItemName = "-"
+                    var topCatName = "-"
+                    val itemStats = mutableMapOf<String, Int>()
+                    val catStats = mutableMapOf<String, Int>()
+                    for (bill in dayBills) {
+                        for (item in bill.items) {
+                            itemStats[item.menuItemName] = (itemStats[item.menuItemName] ?: 0) + item.quantity
+                            catStats[item.menuItemCategory] = (catStats[item.menuItemCategory] ?: 0) + item.quantity
                         }
-                        if (itemStats.isNotEmpty()) topItemName = itemStats.maxByOrNull { it.value }?.key ?: "-"
-                        if (catStats.isNotEmpty()) topCatName = catStats.maxByOrNull { it.value }?.key ?: "-"
-                        
-                        val currTimeStr = "23:59"
-                        
-                        val autoStats = DayStats(
-                            restaurantName = resName,
-                            businessDate = lastActiveDate,
-                            orders = unclosedBills.size,
-                            grossSales = totalSales,
-                            gstCollected = unclosedBills.sumOf { it.bill.gstAmount },
-                            discounts = unclosedBills.sumOf { it.bill.discountAmount },
-                            cash = unclosedBills.filter { it.bill.paymentMethod == "CASH" }.sumOf { it.bill.totalAmount },
-                            upi = unclosedBills.filter { it.bill.paymentMethod == "UPI" }.sumOf { it.bill.totalAmount },
-                            card = unclosedBills.filter { it.bill.paymentMethod == "CARD" }.sumOf { it.bill.totalAmount },
-                            averageBill = if (unclosedBills.isNotEmpty()) totalSales / unclosedBills.size else 0.0,
-                            highestBill = unclosedBills.maxOfOrNull { it.bill.totalAmount } ?: 0.0,
-                            lowestBill = unclosedBills.minOfOrNull { it.bill.totalAmount } ?: 0.0,
-                            topSellingItem = topItemName,
-                            topSellingCategory = topCatName,
-                            itemsSold = unclosedBills.sumOf { it.bill.totalItems },
-                            openingTime = openingTime,
-                            currentTime = currTimeStr
-                        )
-                        
-                        try {
-                            val uriStr = com.example.util.PdfGenerator.generateDailyReport(context, android.net.Uri.parse(savedFolderUriStr), autoStats, unclosedBills)
-                            if (uriStr != null) {
-                                val closure = DailyClosure(
-                                    dateString = lastActiveDate,
-                                    closedAtTimestamp = System.currentTimeMillis(),
-                                    totalOrders = autoStats.orders,
-                                    totalSales = autoStats.grossSales,
-                                    pdfFilePath = uriStr
-                                )
-                                closureDao.insertClosure(closure)
-                            }
-                        } catch (e: Exception) {
-                            e.printStackTrace()
+                    }
+                    if (itemStats.isNotEmpty()) topItemName = itemStats.maxByOrNull { it.value }?.key ?: "-"
+                    if (catStats.isNotEmpty()) topCatName = catStats.maxByOrNull { it.value }?.key ?: "-"
+                    
+                    val currTimeStr = String.format("%02d:%02d", autoCloseHour, autoCloseMinute)
+                    
+                    val autoStats = DayStats(
+                        restaurantName = resName,
+                        businessDate = dateToCloseStr,
+                        orders = dayBills.size,
+                        grossSales = totalSales,
+                        gstCollected = dayBills.sumOf { it.bill.gstAmount },
+                        discounts = dayBills.sumOf { it.bill.discountAmount },
+                        cash = dayBills.filter { it.bill.paymentMethod == "CASH" }.sumOf { it.bill.totalAmount },
+                        upi = dayBills.filter { it.bill.paymentMethod == "UPI" }.sumOf { it.bill.totalAmount },
+                        card = dayBills.filter { it.bill.paymentMethod == "CARD" }.sumOf { it.bill.totalAmount },
+                        averageBill = if (dayBills.isNotEmpty()) totalSales / dayBills.size else 0.0,
+                        highestBill = dayBills.maxOfOrNull { it.bill.totalAmount } ?: 0.0,
+                        lowestBill = dayBills.minOfOrNull { it.bill.totalAmount } ?: 0.0,
+                        topSellingItem = topItemName,
+                        topSellingCategory = topCatName,
+                        itemsSold = dayBills.sumOf { it.bill.totalItems },
+                        openingTime = openingTime,
+                        currentTime = currTimeStr
+                    )
+                    
+                    try {
+                        val genUriStr = com.example.util.PdfGenerator.generateDailyReport(context, android.net.Uri.parse(savedFolderUriStr), autoStats, dayBills)
+                        if (genUriStr != null) {
+                            pdfUriStr = genUriStr
                         }
-                    } else if (unclosedBills.isEmpty()) {
-                        val closure = DailyClosure(
-                            dateString = lastActiveDate,
-                            closedAtTimestamp = System.currentTimeMillis(),
-                            totalOrders = 0,
-                            totalSales = 0.0,
-                            pdfFilePath = ""
-                        )
-                        closureDao.insertClosure(closure)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
                     }
                 }
-                sharedPrefs.edit().putString("last_active_business_date", todayStr).apply()
+                
+                val closure = DailyClosure(
+                    dateString = dateToCloseStr,
+                    closedAtTimestamp = System.currentTimeMillis(),
+                    totalOrders = dayBills.size,
+                    totalSales = dayBills.sumOf { it.bill.totalAmount },
+                    pdfFilePath = pdfUriStr ?: ""
+                )
+                closureDao.insertClosure(closure)
             }
+            
+            sharedPrefs.edit().putString("last_active_business_date", todayStr).apply()
+            
         } catch (e: Exception) {
             e.printStackTrace()
         }
     }
 
-    fun closeDay(context: android.content.Context, folderUri: android.net.Uri, onSuccess: () -> Unit, onError: () -> Unit) {
+    fun closeDay(context: android.content.Context, folderUri: android.net.Uri, onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             val stats = dayStats.value
+            
+            val existing = closureDao.getClosureForDate(stats.businessDate)
+            if (existing != null) {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onError("This day has already been closed.")
+                }
+                return@launch
+            }
+            
             val bills = todayBillsFlow.value
             
             val uriStr = com.example.util.PdfGenerator.generateDailyReport(context, folderUri, stats, bills)
@@ -272,7 +333,7 @@ class DayClosingViewModel(application: Application) : AndroidViewModel(applicati
                 }
             } else {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    onError()
+                    onError("Failed to generate PDF")
                 }
             }
         }

@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,9 +44,12 @@ fun DayClosingScreen(
     val context = LocalContext.current
     val viewModel: DayClosingViewModel = viewModel()
     val stats by viewModel.dayStats.collectAsState()
+    val isDayClosed by viewModel.isDayClosed.collectAsState()
+    val lastClosure by viewModel.lastClosure.collectAsState()
     
-    val sharedPrefs = remember { context.getSharedPreferences("ohpos_prefs", Context.MODE_PRIVATE) }
-    var savedFolderUri by remember { mutableStateOf(sharedPrefs.getString("report_folder_uri", null)) }
+    val dailyClosingPrefRepo = remember { com.example.data.DailyClosingPreferencesRepository(context) }
+    val savedFolderUri by dailyClosingPrefRepo.exportFolderUri.collectAsState(initial = null)
+    val scope = rememberCoroutineScope()
     
     var showConfirmDialog by remember { mutableStateOf(false) }
     var showLoadingDialog by remember { mutableStateOf(false) }
@@ -53,9 +57,10 @@ fun DayClosingScreen(
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) {
             context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
-            sharedPrefs.edit().putString("report_folder_uri", uri.toString()).apply()
-            savedFolderUri = uri.toString()
-            showConfirmDialog = true
+            scope.launch {
+                dailyClosingPrefRepo.setExportFolderUri(uri.toString())
+                showConfirmDialog = true
+            }
         }
     }
     
@@ -84,9 +89,9 @@ fun DayClosingScreen(
                                 showLoadingDialog = false
                                 onBackClick()
                             },
-                            onError = {
+                            onError = { reason ->
                                 showLoadingDialog = false
-                                Toast.makeText(context, "Unable to generate Daily Report. Please try again.", Toast.LENGTH_LONG).show()
+                                Toast.makeText(context, "Error: $reason", Toast.LENGTH_LONG).show()
                             }
                         )
                     },
@@ -195,15 +200,29 @@ fun DayClosingScreen(
             
             item {
                 Spacer(modifier = Modifier.height(AppTheme.spacing.md))
-                Button(
-                    onClick = handleCloseDay,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.accent),
-                    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
-                ) {
-                    Icon(imageVector = Icons.Rounded.EventAvailable, contentDescription = null, tint = AppTheme.colors.background)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Close Business Day", style = AppTheme.typography.titleMedium, color = AppTheme.colors.background)
+                if (isDayClosed) {
+                    val closureTimeStr = lastClosure?.let { 
+                        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(it.closedAtTimestamp))
+                    } ?: "unknown time"
+                    
+                    Text(
+                        text = "Today's business day was already closed at $closureTimeStr.",
+                        style = AppTheme.typography.bodyLarge,
+                        color = AppTheme.colors.accent,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = AppTheme.spacing.sm),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                } else {
+                    Button(
+                        onClick = handleCloseDay,
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.accent),
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+                    ) {
+                        Icon(imageVector = Icons.Rounded.EventAvailable, contentDescription = null, tint = AppTheme.colors.background)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Close Business Day", style = AppTheme.typography.titleMedium, color = AppTheme.colors.background)
+                    }
                 }
             }
         }

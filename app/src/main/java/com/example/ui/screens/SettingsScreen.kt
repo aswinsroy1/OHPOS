@@ -38,6 +38,7 @@ data class SettingItemData(
     val hasSwitch: Boolean = false,
     val switchState: Boolean = false,
     val onSwitchChange: ((Boolean) -> Unit)? = null,
+    val subtitle: String? = null,
     val onClick: () -> Unit = {}
 )
 
@@ -79,6 +80,36 @@ fun SettingsScreen(
     val autoBackupPrefsRepo = remember { com.example.data.AutoBackupPreferencesRepository(context) }
     val isAutoBackupEnabled by autoBackupPrefsRepo.isAutoBackupEnabled.collectAsState(initial = false)
     val backupFrequencyHours by autoBackupPrefsRepo.backupFrequencyHours.collectAsState(initial = 24)
+
+    val dailyClosingPrefRepo = remember { com.example.data.DailyClosingPreferencesRepository(context) }
+    val isAutoCloseEnabled by dailyClosingPrefRepo.isAutoCloseEnabled.collectAsState(initial = false)
+    val autoCloseHour by dailyClosingPrefRepo.autoCloseHour.collectAsState(initial = 23)
+    val autoCloseMinute by dailyClosingPrefRepo.autoCloseMinute.collectAsState(initial = 59)
+    val exportFolderUri by dailyClosingPrefRepo.exportFolderUri.collectAsState(initial = null)
+    
+    val reportFolderPicker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            context.contentResolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            scope.launch {
+                dailyClosingPrefRepo.setExportFolderUri(uri.toString())
+                Toast.makeText(context, "Export folder updated", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // Notification preferences
+    val notifPrefsRepo = remember { com.example.data.NotificationPreferencesRepository(context) }
+    val notifyBackupSuccess by notifPrefsRepo.backupSuccessEnabled.collectAsState(initial = true)
+    val notifyBackupFailure by notifPrefsRepo.backupFailureEnabled.collectAsState(initial = true)
+    val notifyPrinterFailure by notifPrefsRepo.printerFailureEnabled.collectAsState(initial = true)
+    val notifyDeletionRequest by notifPrefsRepo.deletionRequestEnabled.collectAsState(initial = true)
+
+    // POST_NOTIFICATIONS permission launcher (Android 13+)
+    val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { /* granted or denied — toggles are already saved, notifications will just be silently skipped if denied */ }
     
     val createBackupLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/zip")
@@ -88,8 +119,10 @@ fun SettingsScreen(
                 val success = com.example.util.BackupRestoreManager.performBackup(context, uri)
                 if (success) {
                     Toast.makeText(context, "Backup completed successfully.", Toast.LENGTH_LONG).show()
+                    com.example.util.AppNotificationManager.notifyBackupSuccess(context, "Manual backup completed successfully")
                 } else {
                     Toast.makeText(context, "Backup failed.", Toast.LENGTH_LONG).show()
+                    com.example.util.AppNotificationManager.notifyBackupFailure(context, "Manual backup failed")
                 }
             }
         }
@@ -229,6 +262,49 @@ fun SettingsScreen(
             )
         ),
         SettingSectionData(
+            title = "Daily Closing",
+            items = listOf(
+                SettingItemData(
+                    title = "Automatically close each day",
+                    icon = Icons.Rounded.EventAvailable,
+                    hasSwitch = true,
+                    switchState = isAutoCloseEnabled,
+                    onSwitchChange = { checked -> scope.launch { dailyClosingPrefRepo.setAutoCloseEnabled(checked) } }
+                ),
+                SettingItemData(
+                    title = "Auto-close time",
+                    icon = Icons.Rounded.Schedule,
+                    subtitle = String.format("%02d:%02d", autoCloseHour, autoCloseMinute),
+                    onClick = {
+                        if (isAutoCloseEnabled) {
+                            android.app.TimePickerDialog(
+                                context,
+                                { _, hour, minute ->
+                                    scope.launch {
+                                        dailyClosingPrefRepo.setAutoCloseHour(hour)
+                                        dailyClosingPrefRepo.setAutoCloseMinute(minute)
+                                    }
+                                },
+                                autoCloseHour,
+                                autoCloseMinute,
+                                true
+                            ).show()
+                        } else {
+                            Toast.makeText(context, "Enable automatic closing first.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ),
+                SettingItemData(
+                    title = "Export folder for daily reports",
+                    icon = Icons.Rounded.FolderOpen,
+                    subtitle = exportFolderUri?.let { android.net.Uri.parse(it).lastPathSegment } ?: "Not set",
+                    onClick = {
+                        reportFolderPicker.launch(null)
+                    }
+                )
+            )
+        ),
+        SettingSectionData(
             title = "Backup",
             items = listOf(
                 SettingItemData("Backup Now", Icons.Rounded.Backup, onClick = { createBackupLauncher.launch("OH_POS_Backup_${java.text.SimpleDateFormat("yyyy-MM-dd_HH-mm", java.util.Locale.US).format(java.util.Date())}.zip") }),
@@ -250,6 +326,63 @@ fun SettingsScreen(
                         }
                     },
                     onClick = onNavigateToAutoBackup
+                )
+            )
+        ),
+        SettingSectionData(
+            title = "Notifications",
+            items = listOf(
+                SettingItemData(
+                    title = "Backup Complete",
+                    icon = Icons.Rounded.CloudDone,
+                    hasSwitch = true,
+                    switchState = notifyBackupSuccess,
+                    onSwitchChange = { checked ->
+                        scope.launch { notifPrefsRepo.setBackupSuccessEnabled(checked) }
+                        if (checked && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                            !com.example.util.AppNotificationManager.hasNotificationPermission(context)) {
+                            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                ),
+                SettingItemData(
+                    title = "Backup Failed",
+                    icon = Icons.Rounded.CloudOff,
+                    hasSwitch = true,
+                    switchState = notifyBackupFailure,
+                    onSwitchChange = { checked ->
+                        scope.launch { notifPrefsRepo.setBackupFailureEnabled(checked) }
+                        if (checked && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                            !com.example.util.AppNotificationManager.hasNotificationPermission(context)) {
+                            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                ),
+                SettingItemData(
+                    title = "Print Failure",
+                    icon = Icons.Rounded.PrintDisabled,
+                    hasSwitch = true,
+                    switchState = notifyPrinterFailure,
+                    onSwitchChange = { checked ->
+                        scope.launch { notifPrefsRepo.setPrinterFailureEnabled(checked) }
+                        if (checked && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                            !com.example.util.AppNotificationManager.hasNotificationPermission(context)) {
+                            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                ),
+                SettingItemData(
+                    title = "Deletion Requests",
+                    icon = Icons.Rounded.DeleteSweep,
+                    hasSwitch = true,
+                    switchState = notifyDeletionRequest,
+                    onSwitchChange = { checked ->
+                        scope.launch { notifPrefsRepo.setDeletionRequestEnabled(checked) }
+                        if (checked && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+                            !com.example.util.AppNotificationManager.hasNotificationPermission(context)) {
+                            notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
                 )
             )
         ),
@@ -345,6 +478,7 @@ fun SettingsScreen(
                                         hasSwitch = item.hasSwitch,
                                         switchState = item.switchState,
                                         onSwitchChange = item.onSwitchChange,
+                                        subtitle = item.subtitle,
                                         onClick = item.onClick
                                     )
                                     if (index < section.items.size - 1) {
@@ -844,6 +978,7 @@ fun SettingsRow(
     hasSwitch: Boolean = false,
     switchState: Boolean = false,
     onSwitchChange: ((Boolean) -> Unit)? = null,
+    subtitle: String? = null,
     onClick: () -> Unit
 ) {
     Row(
@@ -871,12 +1006,20 @@ fun SettingsRow(
         
         Spacer(modifier = Modifier.width(AppTheme.spacing.md))
         
-        Text(
-            text = title,
-            style = AppTheme.typography.bodyLarge,
-            color = AppTheme.colors.textPrimary,
-            modifier = Modifier.weight(1f)
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = AppTheme.typography.bodyLarge,
+                color = AppTheme.colors.textPrimary
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    style = AppTheme.typography.bodyMedium,
+                    color = AppTheme.colors.textSecondary
+                )
+            }
+        }
         
         if (hasSwitch) {
             androidx.compose.material3.Switch(

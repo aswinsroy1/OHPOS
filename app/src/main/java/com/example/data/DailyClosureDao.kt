@@ -18,4 +18,7 @@ interface DailyClosureDao {
 
     @Query("SELECT * FROM daily_closures ORDER BY closedAtTimestamp DESC LIMIT 1")
     suspend fun getLastClosureSync(): DailyClosure?
+
+    @Query("SELECT * FROM daily_closures WHERE dateString = :date LIMIT 1")
+    suspend fun getClosureForDate(date: String): DailyClosure?
 }
