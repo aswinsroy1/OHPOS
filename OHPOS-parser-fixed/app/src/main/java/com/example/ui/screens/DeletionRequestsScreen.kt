@@ -12,8 +12,6 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.Icon
@@ -143,10 +141,6 @@ fun DeletionRequestsScreen(
     var selectedBillForContext by remember { mutableStateOf<BillWithItems?>(null) }
     var showContextPopup by remember { mutableStateOf(false) }
     var showDeleteConfirmDialog by remember { mutableStateOf(false) }
-
-    var selectedInvoiceId by remember { mutableStateOf<Int?>(null) }
-    var selectedInvoiceRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
-    val selectedInvoice = pendingRequests.find { it.bill.id == selectedInvoiceId }
 
     // Intercept system Back button to always return to Home
     BackHandler {
@@ -302,14 +296,8 @@ fun DeletionRequestsScreen(
             }
         } else {
             // UNLOCKED DELETION REQUESTS SCREEN CONTENT
-            InvoicePreviewOverlay(
-                isVisible = selectedInvoiceId != null,
-                billWithItems = selectedInvoice,
-                sourceRect = selectedInvoiceRect,
-                onDismissRequest = { selectedInvoiceId = null }
-            ) {
-                PremiumModalOverlay(
-                    isVisible = showContextPopup || showDeleteConfirmDialog || activePinModal != PinModalState.None,
+            PremiumModalOverlay(
+                isVisible = showContextPopup || showDeleteConfirmDialog || activePinModal != PinModalState.None,
                 onDismissRequest = { 
                     showContextPopup = false 
                     showDeleteConfirmDialog = false
@@ -382,10 +370,6 @@ fun DeletionRequestsScreen(
                                                     onLongPress = {
                                                         selectedBillForContext = billWithItems
                                                         showContextPopup = true
-                                                    },
-                                                    onClick = { rect ->
-                                                        selectedInvoiceId = billWithItems.bill.id
-                                                        selectedInvoiceRect = rect
                                                     }
                                                 )
                                             }
@@ -1191,7 +1175,6 @@ fun DeletionRequestsScreen(
                     }
                 }
             )
-            }
         }
         
         // Toast Notification Overlay
@@ -1279,25 +1262,19 @@ fun NumericKeypad(
 @Composable
 fun RecycledOrderItem(
     billWithItems: BillWithItems,
-    onLongPress: () -> Unit,
-    onClick: (androidx.compose.ui.geometry.Rect) -> Unit = {}
+    onLongPress: () -> Unit
 ) {
     val date = Date(billWithItems.bill.timestamp)
     val formatter = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
-    var itemRect by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
     
-    Box(
-        modifier = Modifier.onGloballyPositioned { itemRect = it.boundsInWindow() }
-    ) {
-        AppListItem(
-            title = "Order #${billWithItems.bill.id}",
-            subtitle = formatter.format(date),
-            trailingText = com.example.util.CurrencyFormatter.format(billWithItems.bill.totalAmount),
-            icon = Icons.Rounded.ShoppingCart,
-            statusText = "Pending Deletion",
-            statusColor = AppTheme.colors.textSecondary,
-            onClick = { itemRect?.let { onClick(it) } },
-            onLongPress = onLongPress
-        )
-    }
+    AppListItem(
+        title = "Order #${billWithItems.bill.id}",
+        subtitle = formatter.format(date),
+        trailingText = com.example.util.CurrencyFormatter.format(billWithItems.bill.totalAmount),
+        icon = Icons.Rounded.ShoppingCart,
+        statusText = "Pending Deletion",
+        statusColor = AppTheme.colors.textSecondary,
+        onClick = {},
+        onLongPress = onLongPress
+    )
 }

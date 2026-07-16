@@ -1,0 +1,90 @@
+--- app/src/main/java/com/example/ui/screens/PrinterSettingsScreen.kt
++++ app/src/main/java/com/example/ui/screens/PrinterSettingsScreen.kt
+@@ -20,6 +20,7 @@
+ import androidx.compose.material.icons.Icons
+ import androidx.compose.material.icons.rounded.*
+ import androidx.compose.material3.Icon
++import androidx.compose.material3.Switch
+ import androidx.compose.material3.Text
+ import androidx.compose.runtime.*
+ import androidx.compose.ui.Alignment
+@@ -37,6 +38,8 @@
+ import androidx.compose.ui.text.input.KeyboardType
+ import androidx.compose.material3.DropdownMenu
+ import androidx.compose.material3.DropdownMenuItem
++import kotlinx.coroutines.launch
++import com.example.data.PrinterPreferencesRepository
+ 
+ @Composable
+ fun PrinterSettingsScreen(
+@@ -47,6 +50,11 @@
+     val savedPrinters by viewModel.savedPrinters.collectAsState()
+     val isPrinting by viewModel.isPrinting.collectAsState()
+     val printError by viewModel.printError.collectAsState()
++    
++    val prefRepo = remember { PrinterPreferencesRepository(context) }
++    val printCustomerCopy by prefRepo.printCustomerCopyFlow.collectAsState(initial = false)
++    val printKitchenCopy by prefRepo.printKitchenCopyFlow.collectAsState(initial = false)
++    val openDrawer by prefRepo.openDrawerFlow.collectAsState(initial = false)
++    val scope = rememberCoroutineScope()
+ 
+     LaunchedEffect(printError) {
+         if (printError != null) {
+@@ -124,9 +132,9 @@
+                             .border(AppTheme.dimensions.borderThickness, Color.White.copy(alpha = 0.06f), AppTheme.radius.lg)
+                     ) {
+                         Column(modifier = Modifier.fillMaxWidth()) {
+-                            SettingsRow(title = "Print Customer Copy", icon = Icons.Rounded.Receipt, onClick = {})
+-                            SettingsRow(title = "Print Kitchen Copy", icon = Icons.Rounded.Restaurant, onClick = {})
+-                            SettingsRow(title = "Open Drawer Automatically", icon = Icons.Rounded.PointOfSale, onClick = {})
++                            SettingsToggleRow(title = "Print Customer Copy", icon = Icons.Rounded.Receipt, checked = printCustomerCopy, onCheckedChange = { scope.launch { prefRepo.setPrintCustomerCopy(it) } })
++                            SettingsToggleRow(title = "Print Kitchen Copy", icon = Icons.Rounded.Restaurant, checked = printKitchenCopy, onCheckedChange = { scope.launch { prefRepo.setPrintKitchenCopy(it) } })
++                            SettingsToggleRow(title = "Open Drawer Automatically", icon = Icons.Rounded.PointOfSale, checked = openDrawer, onCheckedChange = { scope.launch { prefRepo.setOpenDrawer(it) } })
+                         }
+                     }
+                 }
+@@ -141,6 +149,43 @@
+     }
+ }
+ 
++@Composable
++fun SettingsToggleRow(
++    title: String,
++    icon: androidx.compose.ui.graphics.vector.ImageVector,
++    checked: Boolean,
++    onCheckedChange: (Boolean) -> Unit
++) {
++    Row(
++        modifier = Modifier
++            .fillMaxWidth()
++            .padding(horizontal = AppTheme.spacing.md, vertical = AppTheme.spacing.md),
++        verticalAlignment = Alignment.CenterVertically
++    ) {
++        Box(
++            modifier = Modifier
++                .size(AppTheme.dimensions.listItemIconSize)
++                .clip(AppTheme.radius.md)
++                .background(AppTheme.colors.surfaceLighter)
++                .border(AppTheme.dimensions.borderThickness, Color.White.copy(alpha = 0.06f), AppTheme.radius.md),
++            contentAlignment = Alignment.Center
++        ) {
++            Icon(
++                imageVector = icon,
++                contentDescription = null,
++                tint = AppTheme.colors.textSecondary,
++                modifier = Modifier.size(AppTheme.dimensions.iconSizeMd)
++            )
++        }
++        Spacer(modifier = Modifier.width(AppTheme.spacing.md))
++        Text(
++            text = title,
++            style = AppTheme.typography.bodyLarge,
++            color = AppTheme.colors.textPrimary,
++            modifier = Modifier.weight(1f)
++        )
++        Switch(checked = checked, onCheckedChange = onCheckedChange)
++    }
++}
++
+ @Composable
+ fun AddPrinterDialog(

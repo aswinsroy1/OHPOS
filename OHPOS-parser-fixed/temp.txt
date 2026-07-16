@@ -1,0 +1,415 @@
+package com.example.ui.screens
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.ui.components.*
+import com.example.ui.theme.AppTheme
+import com.example.data.MenuItem
+import com.example.ui.components.PremiumMotion
+
+@Composable
+fun MenuScreen(
+    selectedTab: NavItem = NavItem.Menu,
+    onTabSelected: (NavItem) -> Unit = {},
+    viewModel: BillingViewModel = viewModel()
+) {
+    val configuration = LocalConfiguration.current
+    val screenHeight = configuration.screenHeightDp.dp
+    
+    val dynamicTopPadding = 68.dp + (screenHeight * 0.02f)
+    val spacerMedium = screenHeight * 0.02f
+    val spacerLarge = screenHeight * 0.03f
+
+    val menuItems by viewModel.allMenuItems.collectAsState()
+    var searchQuery by remember { mutableStateOf("") }
+    val categories = listOf("All Items", "Pizza", "Burger", "Pasta", "Chinese", "Beverages", "Desserts")
+    var selectedCategory by remember { mutableStateOf(categories.first()) }
+    
+    
+    var showAddItemForm by remember { mutableStateOf(false) }
+    var itemToEdit by remember { mutableStateOf<MenuItem?>(null) }
+    var formHasUnsavedChanges by remember { mutableStateOf(false) }
+    var showUnsavedDialog by remember { mutableStateOf(false) }
+    var showSuccessToast by remember { mutableStateOf(false) }
+    var itemToDelete by remember { mutableStateOf<MenuItem?>(null) }
+    var showDeleteToast by remember { mutableStateOf(false) }
+    
+    androidx.compose.runtime.LaunchedEffect(showDeleteToast) {
+        if (showDeleteToast) {
+            kotlinx.coroutines.delay(2000)
+            showDeleteToast = false
+        }
+    }
+    
+    androidx.compose.runtime.LaunchedEffect(showSuccessToast) {
+        if (showSuccessToast) {
+            kotlinx.coroutines.delay(2000)
+            showSuccessToast = false
+        }
+    }
+    
+    val availableCategories = remember(menuItems) {
+        (categories.drop(1) + menuItems.map { it.category }).distinct().filter { it.isNotBlank() }
+    }
+    var selectedItemForAction by remember { mutableStateOf<MenuItem?>(null) }
+    
+    val filteredItems = remember(menuItems, searchQuery, selectedCategory) {
+        val filtered = menuItems.filter {
+            (selectedCategory == "All Items" || it.category.equals(selectedCategory, ignoreCase = true)) &&
+            (searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true))
+        }
+        filtered.sortedBy { !it.isActive }
+    }
+
+    PremiumModalOverlay(
+        isVisible = selectedItemForAction != null || showAddItemForm,
+        onDismissRequest = { 
+            if (selectedItemForAction != null) {
+                selectedItemForAction = null 
+            } else if (showAddItemForm) {
+                if (formHasUnsavedChanges) showUnsavedDialog = true
+                else showAddItemForm = false
+            }
+        },
+        content = {
+            Box(modifier = Modifier.fillMaxSize()) {
+                AppScaffold(
+                    topBar = {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(AppTheme.colors.background)
+                        ) {
+                            AppTopBar(
+                                title = "Menu",
+                                modifier = Modifier
+                                    .windowInsetsPadding(WindowInsets.statusBars)
+                                    .padding(horizontal = AppTheme.spacing.lg)
+                            )
+                        }
+                    },
+                    bottomBar = {
+                        CustomBottomNavigation(
+                            selectedItem = selectedTab,
+                            onItemSelected = onTabSelected
+                        )
+                    }
+                ) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 0.dp), // Padding inside items
+                        contentPadding = PaddingValues(
+                            top = dynamicTopPadding + WindowInsets.statusBars.asPaddingValues().calculateTopPadding(),
+                            bottom = 110.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 80.dp // Extra padding for FAB
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(spacerMedium)
+                    ) {
+                        item(key = "search_bar") {
+                            AppSearchBar(
+                                query = searchQuery,
+                                onQueryChange = { searchQuery = it },
+                                placeholder = "Search menu...",
+                                trailingIcon = Icons.Rounded.FilterList,
+                                modifier = Modifier.padding(horizontal = AppTheme.spacing.lg)
+                            )
+                        }
+                        
+                        item(key = "categories") {
+                            CategoryChips(
+                                categories = categories,
+                                selectedCategory = selectedCategory,
+                                onCategorySelected = { selectedCategory = it }
+                            )
+                        }
+                        
+                        if (filteredItems.isEmpty()) {
+                            item(key = "empty_state") {
+                                Spacer(modifier = Modifier.height(spacerLarge * 2))
+                                EmptyState(
+                                    title = "No menu items yet",
+                                    subtitle = "Tap + to add your first menu item.",
+                                    icon = Icons.Rounded.RestaurantMenu
+                                )
+                            }
+                        } else {
+                            items(filteredItems, key = { it.id }) { item ->
+                                MenuManagementCard(
+                                    menuItem = item,
+                                    onLongPress = { selectedItemForAction = item },
+                                    modifier = Modifier.padding(horizontal = AppTheme.spacing.lg)
+                                )
+                            }
+                        }
+                    }
+                }
+                // Success Toast
+                AnimatedVisibility(
+                    visible = showSuccessToast,
+                    enter = fadeIn(animationSpec = PremiumMotion.defaultSpring()) + androidx.compose.animation.slideInVertically(initialOffsetY = { -it }),
+                    exit = fadeOut(animationSpec = PremiumMotion.defaultSpring()) + androidx.compose.animation.slideOutVertically(targetOffsetY = { -it }),
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = dynamicTopPadding + 16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(AppTheme.radius.full)
+                            .background(AppTheme.colors.surface)
+                            .border(1.dp, Color.White.copy(alpha = 0.1f), AppTheme.radius.full)
+                            .padding(horizontal = 24.dp, vertical = 12.dp)
+                    ) {
+                        Text("Menu item added", style = AppTheme.typography.labelMedium, color = AppTheme.colors.textPrimary)
+                    }
+                }
+                // Delete Toast
+                AnimatedVisibility(
+                    visible = showDeleteToast,
+                    enter = fadeIn(animationSpec = PremiumMotion.defaultSpring()) + androidx.compose.animation.slideInVertically(initialOffsetY = { -it }),
+                    exit = fadeOut(animationSpec = PremiumMotion.defaultSpring()) + androidx.compose.animation.slideOutVertically(targetOffsetY = { -it }),
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = dynamicTopPadding + 16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .clip(AppTheme.radius.full)
+                            .background(AppTheme.colors.surface)
+                            .border(1.dp, Color.White.copy(alpha = 0.1f), AppTheme.radius.full)
+                            .padding(horizontal = 24.dp, vertical = 12.dp)
+                    ) {
+                        Text("Menu item deleted", style = AppTheme.typography.labelMedium, color = AppTheme.colors.textPrimary)
+                    }
+                }
+
+
+                
+                // FAB
+                FloatingActionButton(
+                    onClick = { 
+                    itemToEdit = null
+                    showAddItemForm = true
+                },
+                    containerColor = AppTheme.colors.accent,
+                    contentColor = AppTheme.colors.background,
+                    shape = AppTheme.radius.full,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = AppTheme.spacing.lg, bottom = 110.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Add,
+                        contentDescription = "Add Menu Item",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        },
+        overlayContent = {
+            AnimatedVisibility(
+                visible = selectedItemForAction != null,
+                enter = fadeIn(animationSpec = PremiumMotion.defaultSpring()),
+                exit = fadeOut(animationSpec = PremiumMotion.defaultSpring()),
+                modifier = Modifier.align(Alignment.Center)
+            ) {
+                selectedItemForAction?.let { item ->
+                    Box(
+                        modifier = Modifier
+                            .padding(AppTheme.spacing.lg)
+                            .clip(AppTheme.radius.lg)
+                            .background(AppTheme.colors.surface)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) {}
+                            .padding(vertical = AppTheme.spacing.md)
+                            .width(260.dp)
+                    ) {
+                        Column {
+                            ActionPanelItem(
+                                icon = Icons.Rounded.Edit,
+                                text = "Edit Item",
+                                onClick = { 
+                                    itemToEdit = item
+                                    showAddItemForm = true
+                                    selectedItemForAction = null
+                                }
+                            )
+                            ActionPanelItem(
+                                icon = Icons.Rounded.ContentCopy,
+                                text = "Duplicate Item",
+                                onClick = { 
+                                    val duplicate = item.copy(id = 0, name = "${item.name} (Copy)")
+                                    viewModel.saveMenuItem(duplicate)
+                                    selectedItemForAction = null
+                                }
+                            )
+                            ActionPanelItem(
+                                icon = if (item.isActive) Icons.Rounded.VisibilityOff else Icons.Rounded.Visibility,
+                                text = if (item.isActive) "Temporarily Disable" else "Enable Item",
+                                onClick = { 
+                                    viewModel.updateMenuAvailability(item.id, !item.isActive)
+                                    selectedItemForAction = null
+                                }
+                            )
+                            ActionPanelItem(
+                                icon = Icons.Rounded.Delete,
+                                text = "Delete Item",
+                                textColor = Color(0xFFFF4C4C),
+                                iconColor = Color(0xFFFF4C4C),
+                                onClick = { 
+                                    itemToDelete = item
+                                    selectedItemForAction = null
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+            
+            AnimatedVisibility(
+                visible = showAddItemForm,
+                enter = androidx.compose.animation.slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = PremiumMotion.defaultSpring()
+                ),
+                exit = androidx.compose.animation.slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = PremiumMotion.defaultSpring()
+                ),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .fillMaxHeight(0.9f)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                        .background(AppTheme.colors.background)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) {}
+                ) {
+                    AddMenuItemForm(
+                        initialItem = itemToEdit,
+                        existingCategories = availableCategories,
+                        onHasUnsavedChanges = { formHasUnsavedChanges = it },
+                        onSave = { newItem ->
+                            viewModel.saveMenuItem(newItem)
+                            showAddItemForm = false
+                            itemToEdit = null
+                            formHasUnsavedChanges = false
+                            if (newItem.id == 0) showSuccessToast = true
+                        },
+                        onCancel = {
+                            if (formHasUnsavedChanges) showUnsavedDialog = true
+                            else {
+                                showAddItemForm = false
+                                itemToEdit = null
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    )
+
+    if (showUnsavedDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showUnsavedDialog = false },
+            title = { androidx.compose.material3.Text("Discard Changes?", color = AppTheme.colors.textPrimary) },
+            text = { androidx.compose.material3.Text("You have unsaved changes. Are you sure you want to discard them?", color = AppTheme.colors.textSecondary) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        showUnsavedDialog = false
+                        showAddItemForm = false
+                        itemToEdit = null
+                        formHasUnsavedChanges = false
+                    }
+                ) {
+                    androidx.compose.material3.Text("Discard", color = androidx.compose.ui.graphics.Color(0xFFFF4C4C))
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showUnsavedDialog = false }) {
+                    androidx.compose.material3.Text("Continue Editing", color = AppTheme.colors.textPrimary)
+                }
+            },
+            containerColor = AppTheme.colors.surface
+        )
+    }
+    if (itemToDelete != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            title = { androidx.compose.material3.Text("Delete Item?", color = AppTheme.colors.textPrimary) },
+            text = { androidx.compose.material3.Text("This action cannot be undone.", color = AppTheme.colors.textSecondary) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        itemToDelete?.let {
+                            viewModel.deleteMenuItem(it.id, it.imageUrl)
+                            showDeleteToast = true
+                        }
+                        itemToDelete = null
+                    }
+                ) {
+                    androidx.compose.material3.Text("Delete", color = androidx.compose.ui.graphics.Color(0xFFFF4C4C))
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { itemToDelete = null }) {
+                    androidx.compose.material3.Text("Cancel", color = AppTheme.colors.textPrimary)
+                }
+            },
+            containerColor = AppTheme.colors.surface
+        )
+    }
+}
+
+@Composable
+private fun ActionPanelItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    textColor: Color = AppTheme.colors.textPrimary,
+    iconColor: Color = AppTheme.colors.textSecondary,
+    onClick: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .bouncyClickable { onClick() }
+            .padding(horizontal = AppTheme.spacing.lg, vertical = 14.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconColor,
+            modifier = Modifier.size(22.dp)
+        )
+        Spacer(modifier = Modifier.width(16.dp))
+        Text(
+            text = text,
+            style = AppTheme.typography.bodyLarge,
+            color = textColor
+        )
+    }
+}

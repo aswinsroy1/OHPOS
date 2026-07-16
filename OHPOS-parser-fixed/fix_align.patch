@@ -1,0 +1,18 @@
+--- app/src/main/java/com/example/ui/screens/ProfileScreen.kt
++++ app/src/main/java/com/example/ui/screens/ProfileScreen.kt
+@@ -75,6 +75,7 @@
+                     }
+                 }
+             ) {
++                Box(modifier = Modifier.fillMaxSize()) {
+                 Column(
+                     modifier = Modifier
+                         .fillMaxSize()
+@@ -232,6 +233,7 @@
+                         Text("Profile updated successfully", style = AppTheme.typography.labelMedium, color = AppTheme.colors.textPrimary)
+                     }
+                 }
++                }
+             }
+         },
+         overlayContent = {

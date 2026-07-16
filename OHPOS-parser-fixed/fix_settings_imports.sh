@@ -1,0 +1,1 @@
+sed -i 's/import androidx.compose.material.icons.rounded.\*/import androidx.compose.material.icons.rounded.*\nimport androidx.compose.material.icons.rounded.PrintDisabled\nimport androidx.compose.material.icons.rounded.ErrorOutline/g' app/src/main/java/com/example/ui/screens/PrinterSettingsScreen.kt

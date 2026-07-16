@@ -1,0 +1,5 @@
+sed -i 's/com.example.ui.components.SecondaryButton(/com.example.ui.components.PrimaryButton(containerColor = AppTheme.colors.surfaceLighter, contentColor = AppTheme.colors.textPrimary,/g' app/src/main/java/com/example/ui/screens/PrinterSettingsScreen.kt
+sed -i 's/com.example.ui.components.DangerButton(/com.example.ui.components.PrimaryButton(containerColor = androidx.compose.ui.graphics.Color(0xFFE53935), contentColor = androidx.compose.ui.graphics.Color.White,/g' app/src/main/java/com/example/ui/screens/PrinterSettingsScreen.kt
+
+sed -i 's/com.example.ui.components.SecondaryButton(/com.example.ui.components.PrimaryButton(containerColor = AppTheme.colors.surfaceLighter, contentColor = AppTheme.colors.textPrimary,/g' app/src/main/java/com/example/ui/screens/BillingScreen.kt
+sed -i 's/com.example.ui.components.DangerButton(/com.example.ui.components.PrimaryButton(containerColor = androidx.compose.ui.graphics.Color(0xFFE53935), contentColor = androidx.compose.ui.graphics.Color.White,/g' app/src/main/java/com/example/ui/screens/BillingScreen.kt
