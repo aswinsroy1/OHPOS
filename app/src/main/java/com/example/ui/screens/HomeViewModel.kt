@@ -119,6 +119,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun requestDeletion(billId: Int) {
         viewModelScope.launch {
             billDao.requestDeletion(billId)
+            com.example.util.AppNotificationManager.notifyDeletionRequest(
+                getApplication<Application>(),
+                "Deletion request for invoice #$billId needs manager approval"
+            )
         }
     }
 }

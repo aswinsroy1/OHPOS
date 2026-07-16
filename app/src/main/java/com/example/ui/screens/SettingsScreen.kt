@@ -106,6 +106,12 @@ fun SettingsScreen(
     val notifyPrinterFailure by notifPrefsRepo.printerFailureEnabled.collectAsState(initial = true)
     val notifyDeletionRequest by notifPrefsRepo.deletionRequestEnabled.collectAsState(initial = true)
 
+    // GST Configuration
+    val gstPrefRepo = remember { com.example.data.GstPreferencesRepository(context) }
+    val restaurantGst by gstPrefRepo.restaurantGstPercent.collectAsState(initial = 5.0)
+    val deliveryGst by gstPrefRepo.deliveryGstPercent.collectAsState(initial = 18.0)
+    var showGstConfigDialog by remember { mutableStateOf(false) }
+
     // POST_NOTIFICATIONS permission launcher (Android 13+)
     val notificationPermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
@@ -259,6 +265,17 @@ fun SettingsScreen(
                 SettingItemData("Receipt Layout", Icons.Rounded.ListAlt, onClick = onNavigateToReceiptLayout),
                 SettingItemData("Paper Size", Icons.Rounded.InsertDriveFile, onClick = { showPaperSizeSheet = true }),
                 SettingItemData("Test Print", Icons.Rounded.DoneAll, onClick = { val printer = savedPrinters.firstOrNull { it.isDefault } ?: savedPrinters.firstOrNull(); if (printer != null) printerViewModel.testPrint(context, printer) else Toast.makeText(context, "No printer configured.", Toast.LENGTH_LONG).show() })
+            )
+        ),
+        SettingSectionData(
+            title = "Billing & Taxes",
+            items = listOf(
+                SettingItemData(
+                    title = "GST Rates",
+                    icon = Icons.Rounded.Receipt,
+                    subtitle = "Restaurant: ${restaurantGst}%, Delivery: ${deliveryGst}%",
+                    onClick = { showGstConfigDialog = true }
+                )
             )
         ),
         SettingSectionData(
@@ -509,6 +526,78 @@ fun SettingsScreen(
             },
             onCancel = { showPinSetup = false }
         )
+        
+        if (showGstConfigDialog) {
+            var tempRestaurantGst by remember { mutableStateOf(restaurantGst.toString()) }
+            var tempDeliveryGst by remember { mutableStateOf(deliveryGst.toString()) }
+            
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { showGstConfigDialog = false }
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(AppTheme.spacing.lg)
+                        .clip(AppTheme.radius.xl)
+                        .background(AppTheme.colors.surface)
+                        .border(1.dp, AppTheme.colors.borderLight, AppTheme.radius.xl)
+                        .padding(AppTheme.spacing.xl)
+                ) {
+                    Column {
+                        Text("Configure GST Rates", style = AppTheme.typography.titleLarge, color = AppTheme.colors.textPrimary)
+                        Spacer(modifier = Modifier.height(AppTheme.spacing.md))
+                        
+                        Text("Restaurant Order GST (%)", style = AppTheme.typography.labelMedium, color = AppTheme.colors.textSecondary)
+                        Spacer(modifier = Modifier.height(AppTheme.spacing.xs))
+                        androidx.compose.material3.OutlinedTextField(
+                            value = tempRestaurantGst,
+                            onValueChange = { tempRestaurantGst = it },
+                            placeholder = { Text("e.g. 5.0") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        Spacer(modifier = Modifier.height(AppTheme.spacing.md))
+                        
+                        Text("Delivery Order GST (%)", style = AppTheme.typography.labelMedium, color = AppTheme.colors.textSecondary)
+                        Spacer(modifier = Modifier.height(AppTheme.spacing.xs))
+                        androidx.compose.material3.OutlinedTextField(
+                            value = tempDeliveryGst,
+                            onValueChange = { tempDeliveryGst = it },
+                            placeholder = { Text("e.g. 18.0") },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        Spacer(modifier = Modifier.height(AppTheme.spacing.lg))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            androidx.compose.material3.TextButton(onClick = { showGstConfigDialog = false }) {
+                                Text("Cancel", color = AppTheme.colors.textSecondary)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            androidx.compose.material3.Button(
+                                onClick = {
+                                    scope.launch {
+                                        val restGst = tempRestaurantGst.toDoubleOrNull() ?: 5.0
+                                        val delGst = tempDeliveryGst.toDoubleOrNull() ?: 5.0
+                                        gstPrefRepo.setRestaurantGstPercent(restGst)
+                                        gstPrefRepo.setDeliveryGstPercent(delGst)
+                                        showGstConfigDialog = false
+                                        Toast.makeText(context, "GST rates updated", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = AppTheme.colors.accent)
+                            ) {
+                                Text("Save", color = AppTheme.colors.background)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         
         if (showRestoreDialog && restoreManifest != null) {
             androidx.compose.ui.window.Dialog(

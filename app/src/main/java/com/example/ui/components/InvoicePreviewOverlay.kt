@@ -390,7 +390,7 @@ fun InvoicePreviewOverlay(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(text = "GST (5%)", style = AppTheme.typography.bodyMedium, color = AppTheme.colors.textSecondary)
+                                Text(text = "GST (${lastBill!!.bill.gstRatePercent}%)", style = AppTheme.typography.bodyMedium, color = AppTheme.colors.textSecondary)
                                 Text(text = CurrencyFormatter.formatNoDecimals(gst), style = AppTheme.typography.bodyMedium, color = AppTheme.colors.textPrimary)
                             }
                             Spacer(modifier = Modifier.height(AppTheme.spacing.sm))

@@ -19,6 +19,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             com.example.data.AppDatabase.getDatabase(applicationContext)
         )
         
+        com.example.util.AppNotificationManager.createChannels(applicationContext)
+        
         enableEdgeToEdge()
         setContent {
             AppDesignSystem {

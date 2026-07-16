@@ -41,6 +41,7 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
 
     private val repository: MenuRepository
     private val billDao: com.example.data.BillDao
+    private val gstPrefRepo = com.example.data.GstPreferencesRepository(application)
 
     init {
         val menuDao = database.menuDao()
@@ -165,7 +166,14 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
             }
             
             val subtotal = billItems.sumOf { it.price * it.quantity }
-            val gst = if (isGstEnabled) subtotal * 0.05 else 0.0
+            
+            val appliedRate = if (orderType == 1) {
+                gstPrefRepo.deliveryGstPercent.first()
+            } else {
+                gstPrefRepo.restaurantGstPercent.first()
+            }
+            
+            val gst = if (isGstEnabled) subtotal * (appliedRate / 100.0) else 0.0
             val totalAmount = subtotal + gst
             
             val totalItems = currentCart.sumOf { it.quantity }
@@ -175,7 +183,8 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                 totalAmount = totalAmount,
                 totalItems = totalItems,
                 orderMode = orderModeStr,
-                gstAmount = gst
+                gstAmount = gst,
+                gstRatePercent = if (isGstEnabled) appliedRate else 0.0
             )
             
             val billId = billDao.insertBill(bill)
@@ -220,6 +229,10 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                 if (currentStatus != com.example.util.PrinterState.CONNECTED) {
                     _printEvent.value = PrintEvent.Offline(billId.toInt())
                     billDao.updatePrintStatus(billId.toInt(), "PRINT_FAILED")
+                    com.example.util.AppNotificationManager.notifyPrinterFailure(
+                        getApplication<Application>(),
+                        "Printer offline — receipt for order #${billId.toInt()} was not printed"
+                    )
                     return@launch
                 }
                 
@@ -271,6 +284,10 @@ class BillingViewModel(application: Application) : AndroidViewModel(application)
                     _printEvent.value = PrintEvent.Success(billId.toInt())
                 } else {
                     _printEvent.value = PrintEvent.Failed(billId.toInt())
+                    com.example.util.AppNotificationManager.notifyPrinterFailure(
+                        getApplication<Application>(),
+                        "Receipt print failed for order #${billId.toInt()}"
+                    )
                 }
             } else {
                 billDao.updatePrintStatus(billId.toInt(), "SAVED")

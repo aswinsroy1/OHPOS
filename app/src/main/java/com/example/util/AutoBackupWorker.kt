@@ -12,9 +12,25 @@ class AutoBackupWorker(
     override suspend fun doWork(): Result {
         return try {
             val success = AutomaticBackupManager.performAutomaticBackup(context)
-            if (success) Result.success() else Result.failure()
+            if (success) {
+                AppNotificationManager.notifyBackupSuccess(
+                    context,
+                    "Automatic backup completed successfully"
+                )
+                Result.success()
+            } else {
+                AppNotificationManager.notifyBackupFailure(
+                    context,
+                    "Automatic backup failed — check storage permissions and backup folder"
+                )
+                Result.failure()
+            }
         } catch (e: Exception) {
             e.printStackTrace()
+            AppNotificationManager.notifyBackupFailure(
+                context,
+                "Automatic backup failed — ${e.message ?: "unknown error"}"
+            )
             Result.retry()
         }
     }

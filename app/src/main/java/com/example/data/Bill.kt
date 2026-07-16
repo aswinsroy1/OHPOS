@@ -16,7 +16,8 @@ data class Bill(
     val state: String = "ACTIVE",
     val paymentMethod: String = "CASH",
     val gstAmount: Double = 0.0,
-    val discountAmount: Double = 0.0
+    val discountAmount: Double = 0.0,
+    val gstRatePercent: Double = 5.0
 )
 
 @Entity(tableName = "bill_items")

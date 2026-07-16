@@ -18,7 +18,7 @@ import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
-import kotlin.math.abs
+
 
 class NoTextFoundException(message: String) : Exception(message)
 
@@ -102,72 +102,24 @@ object PdfParser {
     }
 
     private fun parsePageResult(result: com.google.mlkit.vision.text.Text, pageWidth: Int): List<MenuItem> {
-        val lines = result.textBlocks.flatMap { it.lines }
-        if (lines.isEmpty()) return emptyList()
-
-        val pageWidthTolerance = pageWidth * 0.15f
-
-        // 1. Cluster by left-edge x-position
-        val clusters = mutableListOf<MutableList<com.google.mlkit.vision.text.Text.Line>>()
-
-        for (line in lines) {
-            val left = line.boundingBox?.left?.toFloat() ?: 0f
-            var placed = false
-            for (cluster in clusters) {
-                val clusterLeft = cluster.mapNotNull { it.boundingBox?.left }.average().toFloat()
-                if (abs(left - clusterLeft) <= pageWidthTolerance) {
-                    cluster.add(line)
-                    placed = true
-                    break
-                }
-            }
-            if (!placed) {
-                clusters.add(mutableListOf(line))
+        val parsedItems = RowSegmentMenuParser.parse(result, pageWidth)
+        if (parsedItems.isNotEmpty()) {
+            return parsedItems.map { parsed ->
+                MenuItem(
+                    id = 0,
+                    name = parsed.name,
+                    price = parsed.price,
+                    category = parsed.category,
+                    description = "",
+                    imageUrl = "",
+                    isActive = true
+                )
             }
         }
-
+        // Last-resort fallback only if the row/segment parser found nothing at all
+        // (e.g. a single stray line with no rows detected) - flat parse as before.
         val textBlocksStr = result.textBlocks.joinToString("\n") { it.text }
-
-        // Fallback to flat parsing if 1 or 0 clusters detected
-        if (clusters.size <= 1) {
-            return parseTextLocallyFlat(textBlocksStr)
-        }
-
-        // 2. Identify real columns vs stray headers. Real columns typically have > 2 lines
-        val actualColumns = clusters.filter { it.size > 2 }.sortedBy { cluster ->
-            cluster.mapNotNull { it.boundingBox?.left }.average()
-        }
-
-        // Fallback if we only found 1 real column
-        if (actualColumns.size <= 1) {
-            return parseTextLocallyFlat(textBlocksStr)
-        }
-
-        // 3. Process stray headers that might act as global page categories
-        val headerLines = clusters.filter { it.size <= 2 }.flatten().sortedBy { it.boundingBox?.top ?: 0 }
-
-        var globalCategory = "Uncategorized"
-
-        for (headerLine in headerLines) {
-            val text = headerLine.text.trim()
-            if (text.length in 3..30 && !text.contains(Regex("""\d"""))) {
-                globalCategory = text.split(" ").joinToString(" ") { 
-                    it.replaceFirstChar { char -> if (char.isLowerCase()) char.titlecase(java.util.Locale.getDefault()) else char.toString() } 
-                }
-            }
-        }
-
-        val items = mutableListOf<MenuItem>()
-
-        // 4. Sort each column vertically and parse independently
-        for (col in actualColumns) {
-            col.sortBy { it.boundingBox?.top ?: 0 }
-            val colText = col.joinToString("\n") { it.text }
-            val colItems = parseTextLocallyFlat(colText, globalCategory)
-            items.addAll(colItems)
-        }
-
-        return items
+        return parseTextLocallyFlat(textBlocksStr)
     }
 
     private fun parseTextLocallyFlat(text: String, initialCategory: String = "Uncategorized"): List<MenuItem> {

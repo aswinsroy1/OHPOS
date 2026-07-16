@@ -74,6 +74,11 @@ fun BillingScreen(
     var showToast by remember { mutableStateOf(false) }
     var toastMessage by remember { mutableStateOf("") }
     
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val gstPrefRepo = remember { com.example.data.GstPreferencesRepository(context) }
+    val restaurantGst by gstPrefRepo.restaurantGstPercent.collectAsState(initial = 5.0)
+    val deliveryGst by gstPrefRepo.deliveryGstPercent.collectAsState(initial = 18.0)
+    
     LaunchedEffect(showToast) {
         if (showToast) {
             kotlinx.coroutines.delay(3000)
@@ -81,11 +86,8 @@ fun BillingScreen(
         }
     }
 
-
-
-
-
     var selectedOrderType by remember { mutableStateOf(0) } // 0: Restaurant, 1: Delivery
+    val currentGstRate = if (selectedOrderType == 1) deliveryGst else restaurantGst
     
     var isCartExpanded by remember { mutableStateOf(false) }
 
@@ -113,7 +115,7 @@ fun BillingScreen(
     }
 
     val animatedGst by animateFloatAsState(
-        targetValue = if (isGstEnabled) (subtotal * 0.05).toFloat() else 0f,
+        targetValue = if (isGstEnabled) (subtotal * (currentGstRate / 100.0)).toFloat() else 0f,
         animationSpec = spring(dampingRatio = 0.76f, stiffness = 180f),
         label = "gst"
     )
@@ -367,7 +369,7 @@ fun BillingScreen(
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = "GST (5%)",
+                                        text = "GST (${currentGstRate}%)",
                                         style = AppTheme.typography.bodyLarge,
                                         color = AppTheme.colors.textSecondary
                                     )
