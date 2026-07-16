@@ -54,8 +54,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 @Composable
 fun MainScreenContent() {
     val dayClosingViewModel: DayClosingViewModel = viewModel()
-    val isDayClosed by dayClosingViewModel.isDayClosed.collectAsState()
-    val showReportsDot = !isDayClosed
+    val autoCloseFailed by dayClosingViewModel.autoCloseFailed.collectAsState()
+    val showReportsDot = autoCloseFailed
     
     var showDayClosingMenu by remember { mutableStateOf(false) }
     var showDayClosingScreen by remember { mutableStateOf(false) }
@@ -118,7 +118,10 @@ fun MainScreenContent() {
                                 selectedTab = it
                                 showSettings = false
                             },
-                            onReportsLongClick = { showDayClosingMenu = true },
+                            onReportsLongClick = { 
+                                dayClosingViewModel.clearAutoCloseFailure()
+                                showDayClosingMenu = true 
+                            },
                             showReportsDot = showReportsDot
                         )
                     }                ) {
@@ -146,7 +149,10 @@ fun MainScreenContent() {
                                     },
                                     onMenuClick = { showAppMenu = true },
                                     onProfileClick = { showProfile = true },
-                                    onReportsLongClick = { showDayClosingMenu = true },
+                                    onReportsLongClick = { 
+                                        dayClosingViewModel.clearAutoCloseFailure()
+                                        showDayClosingMenu = true 
+                                    },
                                     showReportsDot = showReportsDot
                                 )
                                 NavItem.Billing -> BillingScreen(
@@ -157,7 +163,10 @@ fun MainScreenContent() {
                                     },
                                     onMenuClick = { showAppMenu = true },
                                     onOpenSettings = { showSettings = true },
-                                    onReportsLongClick = { showDayClosingMenu = true },
+                                    onReportsLongClick = { 
+                                        dayClosingViewModel.clearAutoCloseFailure()
+                                        showDayClosingMenu = true 
+                                    },
                                     showReportsDot = showReportsDot
                                 )
                                 NavItem.Menu -> MenuScreen(
@@ -167,7 +176,10 @@ fun MainScreenContent() {
                                         showSettings = false
                                     },
                                     onMenuClick = { showAppMenu = true },
-                                    onReportsLongClick = { showDayClosingMenu = true },
+                                    onReportsLongClick = { 
+                                        dayClosingViewModel.clearAutoCloseFailure()
+                                        showDayClosingMenu = true 
+                                    },
                                     showReportsDot = showReportsDot
                                 )
                                 NavItem.Reports -> ReportsScreen(
@@ -177,7 +189,10 @@ fun MainScreenContent() {
                                         showSettings = false
                                     },
                                     onMenuClick = { showAppMenu = true },
-                                    onReportsLongClick = { showDayClosingMenu = true },
+                                    onReportsLongClick = { 
+                                        dayClosingViewModel.clearAutoCloseFailure()
+                                        showDayClosingMenu = true 
+                                    },
                                     showReportsDot = showReportsDot,
                                     onDayClosingClick = { showDayClosingScreen = true }
                                 )

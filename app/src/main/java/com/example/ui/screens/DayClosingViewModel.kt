@@ -8,6 +8,8 @@ import com.example.data.DailyClosure
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -42,6 +44,13 @@ class DayClosingViewModel(application: Application) : AndroidViewModel(applicati
     private val prefRepo = com.example.data.PrinterPreferencesRepository(application)
     private val dailyClosingPrefRepo = com.example.data.DailyClosingPreferencesRepository(application)
     private val rolloverMutex = Mutex()
+    
+    private val _autoCloseFailed = MutableStateFlow(false)
+    val autoCloseFailed = _autoCloseFailed.asStateFlow()
+    
+    fun clearAutoCloseFailure() {
+        _autoCloseFailed.value = false
+    }
     
     val lastClosure = closureDao.getLastClosureFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -280,10 +289,15 @@ class DayClosingViewModel(application: Application) : AndroidViewModel(applicati
                         val genUriStr = com.example.util.PdfGenerator.generateDailyReport(context, android.net.Uri.parse(savedFolderUriStr), autoStats, dayBills)
                         if (genUriStr != null) {
                             pdfUriStr = genUriStr
+                        } else {
+                            _autoCloseFailed.value = true
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
+                        _autoCloseFailed.value = true
                     }
+                } else if (dayBills.isNotEmpty() && savedFolderUriStr == null) {
+                    _autoCloseFailed.value = true
                 }
                 
                 val closure = DailyClosure(
@@ -300,6 +314,7 @@ class DayClosingViewModel(application: Application) : AndroidViewModel(applicati
             
         } catch (e: Exception) {
             e.printStackTrace()
+            _autoCloseFailed.value = true
         }
     }
 
